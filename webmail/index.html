@@ -1,0 +1,635 @@
+<title>Stalwart Webmail</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: mobile-first single-column list; tapping a row slides in a full-screen
+     detail pane (classic two-screen mail pattern). Postmark motif: teal = read
+     state / actions, amber = unread stamp. */
+  :root{
+    --bg:#f2f4f3; --surface:#ffffff; --surface-2:#eaede9; --border:#dce2df;
+    --fg:#16211d; --fg-muted:#5b6b64; --fg-faint:#8b9b93;
+    --accent:#0e7c66; --accent-fg:#ffffff; --accent-soft:#e3f3ee;
+    --unread:#d9731e; --unread-soft:#fbe7d4;
+    --danger:#b3351f; --danger-soft:#fae3de;
+    --radius:14px;
+    --font-ui:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+    --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0f1613; --surface:#172019; --surface-2:#1e2a23; --border:#27362f;
+      --fg:#e7eeea; --fg-muted:#93a59c; --fg-faint:#5f7268;
+      --accent:#3fcda8; --accent-fg:#06201a; --accent-soft:#163229;
+      --unread:#f0984a; --unread-soft:#3a2615;
+      --danger:#e8766a; --danger-soft:#3a1c17;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1613; --surface:#172019; --surface-2:#1e2a23; --border:#27362f;
+    --fg:#e7eeea; --fg-muted:#93a59c; --fg-faint:#5f7268;
+    --accent:#3fcda8; --accent-fg:#06201a; --accent-soft:#163229;
+    --unread:#f0984a; --unread-soft:#3a2615;
+    --danger:#e8766a; --danger-soft:#3a1c17;
+    color-scheme: dark;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--bg); color:var(--fg); font-family:var(--font-ui);
+    height:100%; overflow:hidden; display:flex; flex-direction:column;
+  }
+  html{height:100%;}
+  button{font-family:inherit; cursor:pointer;}
+  input{font-family:inherit;}
+
+  .screen{ position:fixed; inset:0; display:flex; flex-direction:column; background:var(--bg); }
+
+  /* ---------- Login ---------- */
+  #login{ align-items:center; justify-content:center; padding:24px; gap:0; }
+  .login-card{
+    width:100%; max-width:380px; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:28px 24px; display:flex; flex-direction:column; gap:18px;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+  .brand-mark{
+    width:34px; height:34px; border-radius:9px; background:var(--accent); color:var(--accent-fg);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; flex:none;
+  }
+  .brand-name{ font-weight:600; font-size:17px; letter-spacing:-0.01em; }
+  .brand-sub{ font-size:12.5px; color:var(--fg-muted); margin-top:1px; }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field label{ font-size:12px; font-weight:500; color:var(--fg-muted); text-transform:uppercase; letter-spacing:.04em; }
+  .field input{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:10px;
+    padding:11px 12px; font-size:15px; color:var(--fg); outline:none;
+  }
+  .field input:focus{ border-color:var(--accent); }
+  .btn{
+    border:none; border-radius:10px; padding:12px 16px; font-size:14.5px; font-weight:600;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+  }
+  .btn-primary{ background:var(--accent); color:var(--accent-fg); }
+  .btn-primary:disabled{ opacity:.55; }
+  .btn-ghost{ background:transparent; color:var(--fg-muted); }
+  .error-banner{
+    background:var(--danger-soft); color:var(--danger); border-radius:10px; padding:10px 12px;
+    font-size:13px; line-height:1.4; display:none;
+  }
+  .error-banner.show{ display:block; }
+  .saved-accounts{ display:flex; flex-direction:column; gap:8px; margin-top:2px; }
+  .saved-row{
+    display:flex; align-items:center; gap:10px; background:var(--surface-2); border:1px solid var(--border);
+    border-radius:10px; padding:9px 10px; font-size:13.5px;
+  }
+  .saved-row button.pick{ flex:1; text-align:left; background:none; border:none; color:var(--fg); padding:0; font:inherit; }
+  .saved-row button.rm{ background:none; border:none; color:var(--fg-faint); font-size:16px; padding:2px 4px; line-height:1; }
+  .saved-label{ font-size:11.5px; color:var(--fg-faint); text-transform:uppercase; letter-spacing:.05em; margin:2px 0 -2px; }
+
+  /* ---------- List ---------- */
+  #list-screen{ }
+  .topbar{
+    display:flex; align-items:center; gap:10px; padding:calc(14px + env(safe-area-inset-top,0px)) 16px 12px;
+    border-bottom:1px solid var(--border); background:var(--surface); flex:none;
+  }
+  .topbar h1{ font-size:17px; font-weight:600; margin:0; flex:1; letter-spacing:-0.01em; }
+  .topbar .acct{ font-family:var(--font-mono); font-size:11.5px; color:var(--fg-muted); }
+  .icon-btn{
+    width:34px; height:34px; border-radius:9px; background:var(--surface-2); border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center; flex:none; color:var(--fg);
+  }
+  .icon-btn svg{ width:17px; height:17px; }
+  .spin{ animation:spin 0.9s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  #rows{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  .row{
+    display:flex; gap:12px; padding:13px 16px; border-bottom:1px solid var(--border); align-items:flex-start;
+    background:var(--surface);
+  }
+  .row:active{ background:var(--surface-2); }
+  .avatar{
+    width:36px; height:36px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center;
+    font-weight:600; font-size:14px; color:#fff;
+  }
+  .row-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .row-top{ display:flex; align-items:baseline; gap:8px; }
+  .row-from{ font-size:14.5px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row-time{ font-size:11.5px; color:var(--fg-faint); font-family:var(--font-mono); flex:none; }
+  .row-subject{ font-size:13.5px; color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row-preview{ font-size:12.5px; color:var(--fg-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dot{ width:7px; height:7px; border-radius:50%; background:var(--unread); flex:none; margin-top:6px; }
+  .dot.read{ background:transparent; }
+
+  .empty, .state-msg{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:40px 24px; text-align:center; color:var(--fg-muted); }
+  .empty svg{ width:40px; height:40px; color:var(--fg-faint); }
+  .empty h2{ font-size:15px; font-weight:600; color:var(--fg); margin:0; }
+  .empty p{ font-size:13px; margin:0; max-width:260px; line-height:1.5; }
+
+  /* ---------- Detail ---------- */
+  #detail-screen{ transform:translateX(100%); transition:transform .22s ease; }
+  #detail-screen.open{ transform:translateX(0); }
+  .detail-top{
+    display:flex; align-items:center; gap:8px; padding:calc(10px + env(safe-area-inset-top,0px)) 10px 10px;
+    border-bottom:1px solid var(--border); background:var(--surface); flex:none;
+  }
+  .detail-body-wrap{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:18px 18px calc(32px + env(safe-area-inset-bottom,0px)); }
+  .detail-subject{ font-size:19px; font-weight:700; letter-spacing:-0.01em; margin:0 0 14px; text-wrap:balance; }
+  .detail-meta{ display:flex; gap:12px; align-items:flex-start; margin-bottom:18px; }
+  .detail-avatar{ width:42px; height:42px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:16px; color:#fff; }
+  .detail-meta-text{ flex:1; min-width:0; }
+  .detail-from-name{ font-size:14.5px; font-weight:600; }
+  .detail-from-email{ font-size:12.5px; color:var(--fg-muted); font-family:var(--font-mono); word-break:break-all; }
+  .detail-date{ font-size:11.5px; color:var(--fg-faint); font-family:var(--font-mono); margin-top:3px; }
+  .detail-text{
+    font-size:14.5px; line-height:1.65; white-space:pre-wrap; word-wrap:break-word; color:var(--fg);
+    font-family:var(--font-ui);
+  }
+  .detail-text a{
+    color:var(--accent); text-decoration:none; word-break:break-all;
+    background:var(--accent-soft); border-radius:6px; padding:1px 6px;
+    display:inline-block; margin:1px 2px;
+  }
+  .html-note{ display:inline-flex; align-items:center; gap:6px; background:var(--accent-soft); color:var(--accent); font-size:11.5px; font-weight:600; padding:5px 9px; border-radius:7px; margin-bottom:14px; }
+
+  ::-webkit-scrollbar{ width:0; height:0; }
+</style>
+
+<div id="login" class="screen">
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-mark">S</div>
+      <div>
+        <div class="brand-name">Stalwart Webmail</div>
+        <div class="brand-sub">Quick JMAP mailbox reader for your phone</div>
+      </div>
+    </div>
+
+    <div id="saved-wrap" style="display:none">
+      <div class="saved-label">Saved accounts</div>
+      <div class="saved-accounts" id="saved-accounts"></div>
+    </div>
+
+    <div class="field">
+      <label for="f-email">Email</label>
+      <input id="f-email" type="email" autocomplete="username" placeholder="hello@example.com" inputmode="email">
+    </div>
+    <div class="field">
+      <label for="f-pass">Password</label>
+      <input id="f-pass" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <div class="error-banner" id="login-error"></div>
+    <button class="btn btn-primary" id="btn-login">
+      <span id="login-label">Log in</span>
+    </button>
+  </div>
+</div>
+
+<div id="list-screen" class="screen" style="display:none">
+  <div class="topbar">
+    <div>
+      <h1>Inbox</h1>
+      <div class="acct" id="acct-label"></div>
+    </div>
+    <button class="icon-btn" id="btn-refresh" title="Refresh">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-switch" title="Switch account">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+    </button>
+  </div>
+  <div id="rows"></div>
+</div>
+
+<div id="detail-screen" class="screen" style="display:none">
+  <div class="detail-top">
+    <button class="icon-btn" id="btn-back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+  </div>
+  <div class="detail-body-wrap" id="detail-body"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  // No server backs this page, so there's no .env to read a hostname from —
+  // it's derived from the domain of whatever email the user logs in with,
+  // following this project's own convention of serving JMAP at "mail.<domain>".
+  var BASE = null;
+  function baseUrlFor(email){ return "https://mail." + email.slice(email.indexOf("@") + 1); }
+  var LS_LAST = "stalwart_webmail_last";
+  var LS_SAVED = "stalwart_webmail_saved";
+  var FETCH_LIMIT = 50;
+
+  var els = {
+    login: document.getElementById("login"),
+    listScreen: document.getElementById("list-screen"),
+    detailScreen: document.getElementById("detail-screen"),
+    fEmail: document.getElementById("f-email"),
+    fPass: document.getElementById("f-pass"),
+    btnLogin: document.getElementById("btn-login"),
+    loginLabel: document.getElementById("login-label"),
+    loginError: document.getElementById("login-error"),
+    savedWrap: document.getElementById("saved-wrap"),
+    savedAccounts: document.getElementById("saved-accounts"),
+    acctLabel: document.getElementById("acct-label"),
+    rows: document.getElementById("rows"),
+    btnRefresh: document.getElementById("btn-refresh"),
+    btnSwitch: document.getElementById("btn-switch"),
+    btnBack: document.getElementById("btn-back"),
+    detailBody: document.getElementById("detail-body"),
+  };
+
+  function safeLS(fn, fallback){ try{ return fn(); }catch(e){ return fallback; } }
+  function loadSaved(){ return safeLS(function(){ return JSON.parse(localStorage.getItem(LS_SAVED) || "[]"); }, []); }
+  function saveSaved(list){ safeLS(function(){ localStorage.setItem(LS_SAVED, JSON.stringify(list)); }); }
+  function loadLast(){ return safeLS(function(){ return JSON.parse(localStorage.getItem(LS_LAST) || "null"); }, null); }
+  function saveLast(cred){ safeLS(function(){ localStorage.setItem(LS_LAST, JSON.stringify(cred)); }); }
+  function rememberAccount(email, password){
+    var list = loadSaved().filter(function(a){ return a.email !== email; });
+    list.unshift({ email: email, password: password });
+    saveSaved(list.slice(0, 6));
+  }
+
+  function renderSavedAccounts(){
+    var list = loadSaved();
+    els.savedWrap.style.display = list.length ? "" : "none";
+    els.savedAccounts.innerHTML = "";
+    list.forEach(function(a){
+      var row = document.createElement("div");
+      row.className = "saved-row";
+      var pick = document.createElement("button");
+      pick.className = "pick"; pick.type = "button";
+      pick.textContent = a.email;
+      pick.addEventListener("click", function(){ login(a.email, a.password); });
+      var rm = document.createElement("button");
+      rm.className = "rm"; rm.type = "button"; rm.title = "Remove";
+      rm.textContent = "×";
+      rm.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        saveSaved(loadSaved().filter(function(x){ return x.email !== a.email; }));
+        renderSavedAccounts();
+      });
+      row.appendChild(pick); row.appendChild(rm);
+      els.savedAccounts.appendChild(row);
+    });
+  }
+
+  // ---------- JMAP helpers ----------
+  function utf8Btoa(s){
+    return btoa(String.fromCharCode.apply(null, new TextEncoder().encode(s)));
+  }
+  function authHeader(email, password){ return "Basic " + utf8Btoa(email + ":" + password); }
+
+  function jmapCall(auth, body){
+    return fetch(BASE + "/jmap/", {
+      method: "POST",
+      headers: { "Authorization": auth, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(function(r){
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  function getSession(auth){
+    return fetch(BASE + "/jmap/session", { headers: { "Authorization": auth } }).then(function(r){
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    });
+  }
+
+  // ---------- HTML -> plain text fallback (textContent-safe, never innerHTML) ----------
+  function entDecode(s){
+    return s
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&amp;/gi, "&");
+  }
+  function htmlToText(html){
+    var s = html
+      .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n\n")
+      .replace(/<\/div>/gi, "\n")
+      .replace(/<[^>]+>/g, "");
+    s = entDecode(s);
+    s = s.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    return s;
+  }
+
+  // Render plain text into `container`, turning http(s) URLs into real <a>
+  // elements. Builds DOM nodes directly (never innerHTML) so untrusted email
+  // content can't inject markup; only http:/https: hrefs are ever created.
+  // Long tracking links (Riot/Mailchimp-style, 1000+ chars) get a short
+  // "🔗 host/path" label instead of the raw URL — showing the full URL as
+  // visible text made consecutive long links word-wrap into one indistinct
+  // blue blob with no visible gap between them.
+  function shortLinkLabel(u, raw){
+    if (raw.length <= 46) return raw;
+    var path = (u.pathname && u.pathname !== "/") ? u.pathname : "";
+    var label = u.hostname + path;
+    if (label.length > 42) label = u.hostname;
+    return "🔗 " + label;
+  }
+  var URL_RE = /\bhttps?:\/\/[^\s<>"']+/gi;
+  function linkify(container, text){
+    var lastIndex = 0, m;
+    URL_RE.lastIndex = 0;
+    while ((m = URL_RE.exec(text))){
+      if (m.index > lastIndex) container.appendChild(document.createTextNode(text.slice(lastIndex, m.index)));
+      var raw = m[0];
+      var trail = "";
+      while (raw.length && ")].,!?;:\"'".indexOf(raw[raw.length - 1]) !== -1){
+        trail = raw[raw.length - 1] + trail;
+        raw = raw.slice(0, -1);
+      }
+      var href = null, u = null;
+      try{
+        u = new URL(raw);
+        if (u.protocol === "http:" || u.protocol === "https:") href = u.href;
+      }catch(e){}
+      if (href){
+        var a = document.createElement("a");
+        a.href = href; a.title = href; a.textContent = shortLinkLabel(u, raw);
+        a.target = "_blank"; a.rel = "noopener noreferrer nofollow";
+        container.appendChild(a);
+      } else {
+        container.appendChild(document.createTextNode(raw));
+      }
+      if (trail) container.appendChild(document.createTextNode(trail));
+      lastIndex = URL_RE.lastIndex;
+    }
+    if (lastIndex < text.length) container.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+
+  function bodyTextOf(email){
+    var bv = email.bodyValues || {};
+    var tb = email.textBody || [];
+    var hb = email.htmlBody || [];
+    if (tb.length){
+      return { text: tb.map(function(p){ return (bv[p.partId] || {}).value || ""; }).join("\n"), isHtml:false };
+    }
+    if (hb.length){
+      var raw = hb.map(function(p){ return (bv[p.partId] || {}).value || ""; }).join("\n");
+      return { text: htmlToText(raw), isHtml:true };
+    }
+    return { text: email.preview || "(no content)", isHtml:false };
+  }
+
+  // ---------- state ----------
+  var state = { auth:null, email:null, accountId:null, inboxId:null, emails:[] };
+
+  function showScreen(name){
+    els.login.style.display = name === "login" ? "flex" : "none";
+    els.listScreen.style.display = name === "list" ? "flex" : "none";
+  }
+
+  function setLoginBusy(busy){
+    els.btnLogin.disabled = busy;
+    els.loginLabel.textContent = busy ? "Connecting…" : "Log in";
+  }
+  function showLoginError(msg){
+    els.loginError.textContent = msg;
+    els.loginError.classList.toggle("show", !!msg);
+  }
+
+  function login(email, password){
+    if (!email || !password){ showLoginError("Enter your email and password."); return; }
+    if (email.indexOf("@") <= 0){ showLoginError("Enter a full email address (name@yourdomain)."); return; }
+    setLoginBusy(true); showLoginError("");
+    BASE = baseUrlFor(email);
+    var auth = authHeader(email, password);
+    getSession(auth).then(function(session){
+      var accountId = session.primaryAccounts && session.primaryAccounts["urn:ietf:params:jmap:mail"];
+      if (!accountId) throw new Error("no-account");
+      state.auth = auth; state.email = email; state.accountId = accountId;
+      saveLast({ email: email, password: password });
+      rememberAccount(email, password);
+      els.acctLabel.textContent = email;
+      showScreen("list");
+      loadInboxAndEmails();
+    }).catch(function(err){
+      setLoginBusy(false);
+      if (String(err.message).indexOf("401") !== -1) showLoginError("Wrong email or password.");
+      else showLoginError("Could not connect: " + err.message);
+    });
+  }
+
+  function findInbox(){
+    return jmapCall(state.auth, {
+      using: ["urn:ietf:params:jmap:core","urn:ietf:params:jmap:mail"],
+      methodCalls: [["Mailbox/get", { accountId: state.accountId }, "0"]],
+    }).then(function(resp){
+      var list = resp.methodResponses[0][1].list || [];
+      var inbox = list.filter(function(m){ return m.role === "inbox"; })[0];
+      if (!inbox) throw new Error("Inbox not found");
+      state.inboxId = inbox.id;
+    });
+  }
+
+  function fetchEmails(){
+    return jmapCall(state.auth, {
+      using: ["urn:ietf:params:jmap:core","urn:ietf:params:jmap:mail"],
+      methodCalls: [
+        ["Email/query", { accountId: state.accountId, filter:{ inMailbox: state.inboxId },
+          sort:[{ property:"receivedAt", isAscending:false }], limit: FETCH_LIMIT }, "q"],
+        ["Email/get", { accountId: state.accountId, "#ids": { resultOf:"q", name:"Email/query", path:"/ids" },
+          properties:["id","subject","from","receivedAt","preview","keywords","textBody","htmlBody","bodyValues"],
+          fetchTextBodyValues:true, fetchHTMLBodyValues:true }, "g"],
+      ],
+    }).then(function(resp){
+      state.emails = resp.methodResponses[1][1].list || [];
+    });
+  }
+
+  function setMailBusy(busy){
+    els.btnRefresh.querySelector("svg").classList.toggle("spin", busy);
+  }
+
+  function loadInboxAndEmails(){
+    setMailBusy(true);
+    renderLoading();
+    (state.inboxId ? Promise.resolve() : findInbox())
+      .then(fetchEmails)
+      .then(function(){ setMailBusy(false); renderRows(); })
+      .catch(function(err){
+        setMailBusy(false);
+        renderError("Could not load inbox: " + err.message);
+      });
+  }
+
+  function renderLoading(){
+    els.rows.innerHTML = "";
+    var d = document.createElement("div");
+    d.className = "state-msg";
+    d.textContent = "Loading…";
+    els.rows.appendChild(d);
+  }
+  function renderError(msg){
+    els.rows.innerHTML = "";
+    var wrap = document.createElement("div");
+    wrap.className = "empty";
+    var h = document.createElement("h2"); h.textContent = "Something went wrong";
+    var p = document.createElement("p"); p.textContent = msg;
+    wrap.appendChild(h); wrap.appendChild(p);
+    els.rows.appendChild(wrap);
+  }
+
+  function avatarColor(seed){
+    var hash = 0;
+    for (var i=0;i<seed.length;i++){ hash = (hash*31 + seed.charCodeAt(i)) >>> 0; }
+    var hue = hash % 360;
+    return "hsl(" + hue + ", 46%, 42%)";
+  }
+  function initialsOf(name, email){
+    var src = (name || email || "?").trim();
+    var parts = src.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return src.slice(0,2).toUpperCase();
+  }
+  function relTime(iso){
+    var d = new Date(iso);
+    var diffMs = Date.now() - d.getTime();
+    var min = Math.floor(diffMs/60000);
+    if (min < 1) return "just now";
+    if (min < 60) return min + " min";
+    var hr = Math.floor(min/60);
+    if (hr < 24) return hr + " hr";
+    var day = Math.floor(hr/24);
+    if (day < 7) return day + " d";
+    return d.toLocaleDateString(undefined, { day:"2-digit", month:"2-digit", year:"2-digit" });
+  }
+
+  function renderRows(){
+    els.rows.innerHTML = "";
+    if (!state.emails.length){
+      var wrap = document.createElement("div");
+      wrap.className = "empty";
+      wrap.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>';
+      var h = document.createElement("h2"); h.textContent = "No emails yet";
+      var p = document.createElement("p"); p.textContent = "New emails sent to " + state.email + " will show up here.";
+      wrap.appendChild(h); wrap.appendChild(p);
+      els.rows.appendChild(wrap);
+      return;
+    }
+    state.emails.forEach(function(e){
+      var from = (e.from && e.from[0]) || {};
+      var fromLabel = from.name || from.email || "(unknown)";
+      var seen = !!(e.keywords && e.keywords["$seen"]);
+
+      var row = document.createElement("div");
+      row.className = "row";
+
+      var dot = document.createElement("div");
+      dot.className = "dot" + (seen ? " read" : "");
+      row.appendChild(dot);
+
+      var av = document.createElement("div");
+      av.className = "avatar";
+      av.style.background = avatarColor(fromLabel);
+      av.textContent = initialsOf(from.name, from.email);
+      row.appendChild(av);
+
+      var main = document.createElement("div");
+      main.className = "row-main";
+      var top = document.createElement("div"); top.className = "row-top";
+      var fromEl = document.createElement("div"); fromEl.className = "row-from"; fromEl.textContent = fromLabel;
+      var timeEl = document.createElement("div"); timeEl.className = "row-time"; timeEl.textContent = relTime(e.receivedAt);
+      top.appendChild(fromEl); top.appendChild(timeEl);
+      var subjEl = document.createElement("div"); subjEl.className = "row-subject"; subjEl.style.fontWeight = seen ? "400" : "600";
+      subjEl.textContent = e.subject || "(no subject)";
+      var prevEl = document.createElement("div"); prevEl.className = "row-preview"; prevEl.textContent = e.preview || "";
+
+      main.appendChild(top); main.appendChild(subjEl); main.appendChild(prevEl);
+      row.appendChild(main);
+
+      row.addEventListener("click", function(){ openEmail(e); });
+      els.rows.appendChild(row);
+    });
+  }
+
+  function markSeen(emailId){
+    // path-based partial update so we don't clobber other keywords
+    var patch = {}; patch[emailId] = {}; patch[emailId]["keywords/$seen"] = true;
+    jmapCall(state.auth, {
+      using: ["urn:ietf:params:jmap:core","urn:ietf:params:jmap:mail"],
+      methodCalls: [["Email/set", { accountId: state.accountId, update: patch }, "s"]],
+    }).catch(function(){ /* best effort, ignore */ });
+  }
+
+  function openEmail(e){
+    var from = (e.from && e.from[0]) || {};
+    var body = bodyTextOf(e);
+
+    els.detailBody.innerHTML = "";
+
+    if (body.isHtml){
+      var note = document.createElement("div");
+      note.className = "html-note";
+      note.textContent = "HTML email — shown as plain text";
+      els.detailBody.appendChild(note);
+    }
+
+    var subj = document.createElement("h1"); subj.className = "detail-subject";
+    subj.textContent = e.subject || "(no subject)";
+    els.detailBody.appendChild(subj);
+
+    var meta = document.createElement("div"); meta.className = "detail-meta";
+    var av = document.createElement("div"); av.className = "detail-avatar";
+    var label = from.name || from.email || "?";
+    av.style.background = avatarColor(label);
+    av.textContent = initialsOf(from.name, from.email);
+    var metaText = document.createElement("div"); metaText.className = "detail-meta-text";
+    var nameEl = document.createElement("div"); nameEl.className = "detail-from-name"; nameEl.textContent = label;
+    var emailEl = document.createElement("div"); emailEl.className = "detail-from-email"; emailEl.textContent = from.email || "";
+    var dateEl = document.createElement("div"); dateEl.className = "detail-date";
+    dateEl.textContent = new Date(e.receivedAt).toLocaleString();
+    metaText.appendChild(nameEl); metaText.appendChild(emailEl); metaText.appendChild(dateEl);
+    meta.appendChild(av); meta.appendChild(metaText);
+    els.detailBody.appendChild(meta);
+
+    var textEl = document.createElement("div"); textEl.className = "detail-text";
+    linkify(textEl, body.text);
+    els.detailBody.appendChild(textEl);
+
+    els.detailScreen.style.display = "flex";
+    requestAnimationFrame(function(){ els.detailScreen.classList.add("open"); });
+
+    if (!(e.keywords && e.keywords["$seen"])){
+      e.keywords = e.keywords || {}; e.keywords["$seen"] = true;
+      markSeen(e.id);
+      renderRows();
+    }
+  }
+
+  function closeDetail(){
+    els.detailScreen.classList.remove("open");
+    setTimeout(function(){ els.detailScreen.style.display = "none"; }, 220);
+  }
+
+  function logout(){
+    state = { auth:null, email:null, accountId:null, inboxId:null, emails:[] };
+    showScreen("login");
+    renderSavedAccounts();
+  }
+
+  // ---------- wire up ----------
+  els.btnLogin.addEventListener("click", function(){ login(els.fEmail.value.trim(), els.fPass.value); });
+  els.fPass.addEventListener("keydown", function(ev){ if (ev.key === "Enter") els.btnLogin.click(); });
+  els.btnRefresh.addEventListener("click", function(){ if (!state.auth) return; loadInboxAndEmails(); });
+  els.btnSwitch.addEventListener("click", logout);
+  els.btnBack.addEventListener("click", closeDetail);
+
+  renderSavedAccounts();
+  var last = loadLast();
+  if (last && last.email){
+    els.fEmail.value = last.email;
+    els.fPass.value = last.password;
+  }
+  showScreen("login");
+})();
+</script>

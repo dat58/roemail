@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stalwart Admin</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: sidebar (domains + mailboxes) + main (selected mailbox's inbox).
+     Postmark motif carried over from the companion webmail tool: teal = read
+     state / primary actions, amber = unread stamp, same IBM Plex pairing. */
+  :root{
+    --bg:#f2f4f3; --surface:#ffffff; --surface-2:#eaede9; --border:#dce2df;
+    --fg:#16211d; --fg-muted:#5b6b64; --fg-faint:#8b9b93;
+    --accent:#0e7c66; --accent-fg:#ffffff; --accent-soft:#e3f3ee;
+    --unread:#d9731e; --unread-soft:#fbe7d4;
+    --danger:#b3351f; --danger-soft:#fae3de;
+    --radius:12px;
+    --font-ui:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+    --font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1613; --surface:#172019; --surface-2:#1e2a23; --border:#27362f;
+      --fg:#e7eeea; --fg-muted:#93a59c; --fg-faint:#5f7268;
+      --accent:#3fcda8; --accent-fg:#06201a; --accent-soft:#163229;
+      --unread:#f0984a; --unread-soft:#3a2615;
+      --danger:#e8766a; --danger-soft:#3a1c17;
+      color-scheme: dark;
+    }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{ background:var(--bg); color:var(--fg); font-family:var(--font-ui); overflow:hidden; }
+  button{font-family:inherit; cursor:pointer;}
+  input,select{font-family:inherit;}
+  h1,h2,h3{margin:0;}
+
+  .screen{ position:fixed; inset:0; display:flex; flex-direction:column; background:var(--bg); }
+
+  /* ---------- Login ---------- */
+  #login{ align-items:center; justify-content:center; padding:24px; }
+  .login-card{
+    width:100%; max-width:360px; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:28px 24px; display:flex; flex-direction:column; gap:16px;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand-mark{
+    width:34px; height:34px; border-radius:9px; background:var(--accent); color:var(--accent-fg);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; flex:none;
+  }
+  .brand-name{ font-weight:600; font-size:17px; letter-spacing:-0.01em; }
+  .brand-sub{ font-size:12.5px; color:var(--fg-muted); margin-top:1px; }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field label{ font-size:11.5px; font-weight:500; color:var(--fg-muted); text-transform:uppercase; letter-spacing:.04em; }
+  .field input, .field select{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:9px;
+    padding:10px 11px; font-size:14.5px; color:var(--fg); outline:none; width:100%;
+  }
+  .field input:focus, .field select:focus{ border-color:var(--accent); }
+  .btn{ border:none; border-radius:9px; padding:10px 14px; font-size:13.5px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap; }
+  .btn-primary{ background:var(--accent); color:var(--accent-fg); }
+  .btn-primary:disabled{ opacity:.55; }
+  .btn-ghost{ background:var(--surface-2); color:var(--fg); border:1px solid var(--border); }
+  .btn-danger{ background:var(--danger-soft); color:var(--danger); }
+  .btn-sm{ padding:6px 10px; font-size:12px; border-radius:7px; }
+  .btn-block{ width:100%; }
+  .error-banner{ background:var(--danger-soft); color:var(--danger); border-radius:9px; padding:9px 11px; font-size:13px; display:none; }
+  .error-banner.show{ display:block; }
+
+  /* ---------- App shell ---------- */
+  #app{ display:none; }
+  #app.show{ display:flex; }
+  .topbar{
+    display:flex; align-items:center; gap:10px; padding:calc(12px + env(safe-area-inset-top,0px)) 18px 12px;
+    border-bottom:1px solid var(--border); background:var(--surface); flex:none;
+  }
+  .topbar h1{ font-size:16px; font-weight:600; flex:1; letter-spacing:-0.01em; }
+  .topbar .mark{ width:26px; height:26px; border-radius:7px; background:var(--accent); color:var(--accent-fg); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; }
+
+  .layout{ flex:1; display:flex; min-height:0; }
+  .sidebar{ width:300px; flex:none; border-right:1px solid var(--border); background:var(--surface); overflow-y:auto; display:flex; flex-direction:column; }
+  .main{ flex:1; min-width:0; display:flex; flex-direction:column; background:var(--bg); }
+
+  .panel{ padding:16px 16px 18px; border-bottom:1px solid var(--border); }
+  .panel h2{ font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--fg-muted); margin-bottom:10px; }
+  .list-item{ display:flex; align-items:center; gap:8px; padding:8px 9px; border-radius:8px; font-size:13.5px; }
+  .list-item:hover{ background:var(--surface-2); }
+  .list-item.active{ background:var(--accent-soft); color:var(--accent); font-weight:600; }
+  .list-item .main-label{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+  .list-item .sub-label{ font-size:11px; color:var(--fg-faint); font-family:var(--font-mono); }
+  .inline-form{ display:flex; gap:6px; margin-top:10px; }
+  .inline-form input, .inline-form select{ flex:1; min-width:0; }
+  .empty-sm{ font-size:12.5px; color:var(--fg-faint); padding:4px 2px; }
+
+  .main-empty{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:40px 24px; text-align:center; color:var(--fg-muted); }
+  .main-empty svg{ width:38px; height:38px; color:var(--fg-faint); }
+  .main-empty h2{ font-size:15px; font-weight:600; color:var(--fg); }
+  .main-empty p{ font-size:13px; max-width:260px; line-height:1.5; margin:0; }
+
+  .inbox-top{ display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid var(--border); background:var(--surface); flex:none; }
+  .inbox-top h2{ font-size:15px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .inbox-top .count{ font-size:11.5px; color:var(--fg-muted); font-family:var(--font-mono); }
+  .icon-btn{ width:32px; height:32px; border-radius:8px; background:var(--surface-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; flex:none; color:var(--fg); }
+  .icon-btn svg{ width:16px; height:16px; }
+  .spin{ animation:spin .9s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+
+  #rows{ flex:1; overflow-y:auto; }
+  .row{ display:flex; gap:12px; padding:12px 20px; border-bottom:1px solid var(--border); align-items:flex-start; background:var(--surface); cursor:pointer; }
+  .row:hover{ background:var(--surface-2); }
+  .avatar{ width:34px; height:34px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:13px; color:#fff; }
+  .row-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .row-top{ display:flex; align-items:baseline; gap:8px; }
+  .row-from{ font-size:14px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row-time{ font-size:11px; color:var(--fg-faint); font-family:var(--font-mono); flex:none; }
+  .row-subject{ font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row-preview{ font-size:12px; color:var(--fg-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dot{ width:7px; height:7px; border-radius:50%; background:var(--unread); flex:none; margin-top:6px; }
+  .dot.read{ background:transparent; }
+
+  /* ---------- Detail overlay ---------- */
+  #detail-screen{ transform:translateX(100%); transition:transform .2s ease; z-index:5; }
+  #detail-screen.open{ transform:translateX(0); }
+  .detail-top{ display:flex; align-items:center; gap:8px; padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px; border-bottom:1px solid var(--border); background:var(--surface); flex:none; }
+  .detail-body-wrap{ flex:1; overflow-y:auto; padding:20px 24px calc(32px + env(safe-area-inset-bottom,0px)); max-width:720px; }
+  .detail-subject{ font-size:19px; font-weight:700; letter-spacing:-0.01em; margin:0 0 14px; text-wrap:balance; }
+  .detail-meta{ display:flex; gap:12px; margin-bottom:18px; }
+  .detail-avatar{ width:40px; height:40px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:15px; color:#fff; }
+  .detail-from-name{ font-size:14px; font-weight:600; }
+  .detail-from-email{ font-size:12px; color:var(--fg-muted); font-family:var(--font-mono); word-break:break-all; }
+  .detail-date{ font-size:11px; color:var(--fg-faint); font-family:var(--font-mono); margin-top:3px; }
+  .detail-text{ font-size:14px; line-height:1.65; white-space:pre-wrap; word-wrap:break-word; }
+  .detail-text a{
+    color:var(--accent); text-decoration:none; word-break:break-all;
+    background:var(--accent-soft); border-radius:6px; padding:1px 6px;
+    display:inline-block; margin:1px 2px;
+  }
+  .html-note{ display:inline-flex; gap:6px; background:var(--accent-soft); color:var(--accent); font-size:11px; font-weight:600; padding:5px 9px; border-radius:7px; margin-bottom:14px; }
+
+  @media (max-width: 760px){
+    .sidebar{ position:fixed; inset:0; width:auto; z-index:4; transform:translateX(0); }
+    .sidebar.hide-mobile{ display:none; }
+    .main{ display:none; }
+    .main.show-mobile{ display:flex; }
+  }
+</style>
+</head>
+<body>
+
+<div id="login" class="screen">
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-mark">S</div>
+      <div>
+        <div class="brand-name">Stalwart Admin</div>
+        <div class="brand-sub">Manage domains, mailboxes &amp; read mail</div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="f-pass">Admin password</label>
+      <input id="f-pass" type="password" autocomplete="current-password" placeholder="••••••••">
+    </div>
+    <div class="error-banner" id="login-error"></div>
+    <button class="btn btn-primary btn-block" id="btn-login"><span id="login-label">Log in</span></button>
+  </div>
+</div>
+
+<div id="app" class="screen">
+  <div class="topbar">
+    <div class="mark">S</div>
+    <h1>Stalwart Admin</h1>
+    <button class="icon-btn" id="btn-back-mobile" title="List" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button class="btn btn-ghost btn-sm" id="btn-logout">Log out</button>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar" id="sidebar">
+      <div class="panel">
+        <h2>Domains</h2>
+        <div id="domain-list"></div>
+        <div class="inline-form">
+          <input id="new-domain" placeholder="example.com">
+          <button class="btn btn-primary btn-sm" id="btn-add-domain">+ Add</button>
+        </div>
+      </div>
+      <div class="panel" style="flex:1; display:flex; flex-direction:column; min-height:0;">
+        <h2>Mailboxes</h2>
+        <div id="mailbox-list" style="overflow-y:auto; flex:1;"></div>
+        <div class="field" style="margin-top:10px; gap:8px;">
+          <div class="inline-form">
+            <input id="new-mailbox-local" placeholder="name (e.g. hello)">
+            <select id="new-mailbox-domain"></select>
+          </div>
+          <div class="inline-form">
+            <input id="new-mailbox-quota" type="number" min="0" placeholder="Quota MB (0 = unlimited)">
+            <button class="btn btn-primary btn-sm" id="btn-add-mailbox">+ Create</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main" id="main">
+      <div class="main-empty" id="main-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+        <h2>Select a mailbox</h2>
+        <p>Select a mailbox from the list on the left to view its inbox — no separate password needed.</p>
+      </div>
+      <div id="inbox-view" style="display:none; flex-direction:column; flex:1; min-height:0;">
+        <div class="inbox-top">
+          <h2 id="inbox-email"></h2>
+          <span class="count" id="inbox-count"></span>
+          <button class="icon-btn" id="btn-refresh-inbox" title="Refresh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+          </button>
+          <button class="btn btn-danger btn-sm" id="btn-delete-mailbox">Delete mailbox</button>
+        </div>
+        <div id="rows"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="detail-screen" class="screen">
+  <div class="detail-top">
+    <button class="icon-btn" id="btn-back-detail">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div style="flex:1"></div>
+    <button class="btn btn-danger btn-sm" id="btn-delete-message">Delete email</button>
+  </div>
+  <div class="detail-body-wrap" id="detail-body"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var els = {};
+  ["login","login-error","f-pass","btn-login","login-label",
+   "app","btn-logout","btn-back-mobile","sidebar","main",
+   "domain-list","new-domain","btn-add-domain",
+   "mailbox-list","new-mailbox-local","new-mailbox-domain","new-mailbox-quota","btn-add-mailbox",
+   "main-empty","inbox-view","inbox-email","inbox-count","btn-refresh-inbox","btn-delete-mailbox",
+   "rows","detail-screen","btn-back-detail","btn-delete-message","detail-body"
+  ].forEach(function(id){ els[id.replace(/-([a-z])/g, function(_,c){return c.toUpperCase();})] = document.getElementById(id); });
+
+  var state = { domains: [], mailboxes: [], activeEmail: null, messages: [], activeMessage: null };
+
+  // ---------------- api helper ----------------
+  function api(method, url, body){
+    return fetch(url, {
+      method: method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: "same-origin",
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(data){
+        if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+        return data;
+      });
+    });
+  }
+
+  // ---------------- screens ----------------
+  function showLoggedOut(){
+    els.login.style.display = "flex";
+    els.app.classList.remove("show");
+  }
+  function showLoggedIn(){
+    els.login.style.display = "none";
+    els.app.classList.add("show");
+  }
+
+  function setLoginBusy(busy){
+    els.btnLogin.disabled = busy;
+    els.loginLabel.textContent = busy ? "Checking…" : "Log in";
+  }
+  function showLoginError(msg){
+    els.loginError.textContent = msg;
+    els.loginError.classList.toggle("show", !!msg);
+  }
+
+  function doLogin(){
+    var pass = els.fPass.value;
+    if (!pass) return;
+    setLoginBusy(true); showLoginError("");
+    api("POST", "/api/login", { password: pass }).then(function(){
+      setLoginBusy(false);
+      els.fPass.value = "";
+      showLoggedIn();
+      boot();
+    }).catch(function(err){
+      setLoginBusy(false);
+      showLoginError(err.message || "Login failed");
+    });
+  }
+  els.btnLogin.addEventListener("click", doLogin);
+  els.fPass.addEventListener("keydown", function(ev){ if (ev.key === "Enter") doLogin(); });
+  els.btnLogout.addEventListener("click", function(){
+    api("POST", "/api/logout").finally(function(){ location.reload(); });
+  });
+
+  // ---------------- domains ----------------
+  function renderDomains(){
+    els.domainList.innerHTML = "";
+    els.newMailboxDomain.innerHTML = "";
+    if (!state.domains.length){
+      var e = document.createElement("div"); e.className = "empty-sm"; e.textContent = "No domains yet.";
+      els.domainList.appendChild(e);
+    }
+    state.domains.forEach(function(d){
+      var row = document.createElement("div"); row.className = "list-item";
+      var label = document.createElement("div"); label.className = "main-label"; label.textContent = d.name;
+      row.appendChild(label);
+      els.domainList.appendChild(row);
+
+      var opt = document.createElement("option"); opt.value = d.name; opt.textContent = d.name;
+      els.newMailboxDomain.appendChild(opt);
+    });
+  }
+
+  function loadDomains(){
+    return api("GET", "/api/domains").then(function(list){
+      state.domains = list;
+      renderDomains();
+    });
+  }
+
+  els.btnAddDomain.addEventListener("click", function(){
+    var name = els.newDomain.value.trim();
+    if (!name) return;
+    els.btnAddDomain.disabled = true;
+    api("POST", "/api/domains", { name: name }).then(function(){
+      els.newDomain.value = "";
+      return loadDomains();
+    }).catch(function(err){ alert("Error creating domain: " + err.message); })
+      .finally(function(){ els.btnAddDomain.disabled = false; });
+  });
+
+  // ---------------- mailboxes ----------------
+  function domainOf(email){ return email.slice(email.indexOf("@") + 1); }
+
+  function renderMailboxes(){
+    els.mailboxList.innerHTML = "";
+    if (!state.mailboxes.length){
+      var e = document.createElement("div"); e.className = "empty-sm"; e.textContent = "No mailboxes yet.";
+      els.mailboxList.appendChild(e);
+    }
+    state.mailboxes.forEach(function(m){
+      var row = document.createElement("div"); row.className = "list-item" + (m.emailAddress === state.activeEmail ? " active" : "");
+      var label = document.createElement("div"); label.className = "main-label"; label.textContent = m.emailAddress;
+      label.addEventListener("click", function(){ openMailbox(m.emailAddress); });
+      row.appendChild(label);
+      els.mailboxList.appendChild(row);
+    });
+  }
+
+  function loadMailboxes(){
+    return api("GET", "/api/mailboxes").then(function(list){
+      state.mailboxes = list;
+      renderMailboxes();
+    });
+  }
+
+  els.btnAddMailbox.addEventListener("click", function(){
+    var local = els.newMailboxLocal.value.trim();
+    var domain = els.newMailboxDomain.value;
+    var quota = Number(els.newMailboxQuota.value || 0);
+    if (!local || !domain) return alert("Enter a mailbox name and select a domain.");
+    var email = local + "@" + domain;
+    els.btnAddMailbox.disabled = true;
+    api("POST", "/api/mailboxes", { email: email, quotaMb: quota }).then(function(){
+      els.newMailboxLocal.value = ""; els.newMailboxQuota.value = "";
+      return loadMailboxes();
+    }).catch(function(err){ alert("Error creating mailbox: " + err.message); })
+      .finally(function(){ els.btnAddMailbox.disabled = false; });
+  });
+
+  var confirmDeleteMailboxArmed = false;
+  els.btnDeleteMailbox.addEventListener("click", function(){
+    if (!state.activeEmail) return;
+    if (!confirmDeleteMailboxArmed){
+      confirmDeleteMailboxArmed = true;
+      els.btnDeleteMailbox.textContent = "Confirm delete?";
+      setTimeout(function(){ confirmDeleteMailboxArmed = false; els.btnDeleteMailbox.textContent = "Delete mailbox"; }, 3000);
+      return;
+    }
+    confirmDeleteMailboxArmed = false;
+    els.btnDeleteMailbox.textContent = "Delete mailbox";
+    var email = state.activeEmail;
+    api("DELETE", "/api/mailboxes/" + encodeURIComponent(email)).then(function(){
+      state.activeEmail = null;
+      els.inboxView.style.display = "none";
+      els.mainEmpty.style.display = "flex";
+      return loadMailboxes();
+    }).catch(function(err){ alert("Error deleting mailbox: " + err.message); });
+  });
+
+  // ---------------- inbox ----------------
+  function avatarColor(seed){
+    var hash = 0;
+    for (var i=0;i<seed.length;i++){ hash = (hash*31 + seed.charCodeAt(i)) >>> 0; }
+    return "hsl(" + (hash % 360) + ", 46%, 42%)";
+  }
+  function initialsOf(name, email){
+    var src = (name || email || "?").trim();
+    var parts = src.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return src.slice(0,2).toUpperCase();
+  }
+  function relTime(iso){
+    var d = new Date(iso);
+    var min = Math.floor((Date.now() - d.getTime())/60000);
+    if (min < 1) return "just now";
+    if (min < 60) return min + " min";
+    var hr = Math.floor(min/60);
+    if (hr < 24) return hr + " hr";
+    var day = Math.floor(hr/24);
+    if (day < 7) return day + " d";
+    return d.toLocaleDateString(undefined, { day:"2-digit", month:"2-digit", year:"2-digit" });
+  }
+
+  // Render plain text into `container`, turning http(s) URLs into real <a>
+  // elements. Builds DOM nodes directly (never innerHTML) so untrusted email
+  // content can't inject markup; only http:/https: hrefs are ever created.
+  // Long tracking links (Riot/Mailchimp-style, 1000+ chars) get a short
+  // "🔗 host/path" label instead of the raw URL — showing the full URL as
+  // visible text made consecutive long links word-wrap into one indistinct
+  // blue blob with no visible gap between them.
+  function shortLinkLabel(u, raw){
+    if (raw.length <= 46) return raw;
+    var path = (u.pathname && u.pathname !== "/") ? u.pathname : "";
+    var label = u.hostname + path;
+    if (label.length > 42) label = u.hostname;
+    return "🔗 " + label;
+  }
+  var URL_RE = /\bhttps?:\/\/[^\s<>"']+/gi;
+  function linkify(container, text){
+    var lastIndex = 0, m;
+    URL_RE.lastIndex = 0;
+    while ((m = URL_RE.exec(text))){
+      if (m.index > lastIndex) container.appendChild(document.createTextNode(text.slice(lastIndex, m.index)));
+      var raw = m[0];
+      var trail = "";
+      while (raw.length && ")].,!?;:\"'".indexOf(raw[raw.length - 1]) !== -1){
+        trail = raw[raw.length - 1] + trail;
+        raw = raw.slice(0, -1);
+      }
+      var href = null, u = null;
+      try{
+        u = new URL(raw);
+        if (u.protocol === "http:" || u.protocol === "https:") href = u.href;
+      }catch(e){}
+      if (href){
+        var a = document.createElement("a");
+        a.href = href; a.title = href; a.textContent = shortLinkLabel(u, raw);
+        a.target = "_blank"; a.rel = "noopener noreferrer nofollow";
+        container.appendChild(a);
+      } else {
+        container.appendChild(document.createTextNode(raw));
+      }
+      if (trail) container.appendChild(document.createTextNode(trail));
+      lastIndex = URL_RE.lastIndex;
+    }
+    if (lastIndex < text.length) container.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+
+  function openMailbox(email){
+    state.activeEmail = email;
+    renderMailboxes();
+    els.mainEmpty.style.display = "none";
+    els.inboxView.style.display = "flex";
+    els.inboxEmail.textContent = email;
+    els.main.classList.add("show-mobile");
+    els.sidebar.classList.add("hide-mobile");
+    els.btnBackMobile.style.display = "flex";
+    loadMessages();
+  }
+
+  function setInboxBusy(busy){
+    els.btnRefreshInbox.querySelector("svg").classList.toggle("spin", busy);
+  }
+
+  function loadMessages(){
+    setInboxBusy(true);
+    els.rows.innerHTML = '<div class="empty-sm" style="padding:16px 20px;">Loading…</div>';
+    api("GET", "/api/mailboxes/" + encodeURIComponent(state.activeEmail) + "/messages").then(function(list){
+      state.messages = list;
+      setInboxBusy(false);
+      renderMessages();
+    }).catch(function(err){
+      setInboxBusy(false);
+      els.rows.innerHTML = '<div class="empty-sm" style="padding:16px 20px;">Error: ' + (err.message||"") + '</div>';
+    });
+  }
+  els.btnRefreshInbox.addEventListener("click", loadMessages);
+  els.btnBackMobile.addEventListener("click", function(){
+    els.main.classList.remove("show-mobile");
+    els.sidebar.classList.remove("hide-mobile");
+    els.btnBackMobile.style.display = "none";
+  });
+
+  function renderMessages(){
+    els.inboxCount.textContent = state.messages.length + (state.messages.length === 1 ? " email" : " emails");
+    els.rows.innerHTML = "";
+    if (!state.messages.length){
+      els.rows.innerHTML = '<div class="empty-sm" style="padding:16px 20px;">No emails in INBOX yet.</div>';
+      return;
+    }
+    state.messages.forEach(function(m){
+      var fromLabel = (m.from && (m.from.name || m.from.email)) || "(unknown)";
+      var row = document.createElement("div"); row.className = "row";
+
+      var dot = document.createElement("div"); dot.className = "dot" + (m.seen ? " read" : "");
+      var av = document.createElement("div"); av.className = "avatar"; av.style.background = avatarColor(fromLabel);
+      av.textContent = initialsOf(m.from && m.from.name, m.from && m.from.email);
+
+      var main = document.createElement("div"); main.className = "row-main";
+      var top = document.createElement("div"); top.className = "row-top";
+      var fromEl = document.createElement("div"); fromEl.className = "row-from"; fromEl.textContent = fromLabel;
+      var timeEl = document.createElement("div"); timeEl.className = "row-time"; timeEl.textContent = relTime(m.receivedAt);
+      top.appendChild(fromEl); top.appendChild(timeEl);
+      var subjEl = document.createElement("div"); subjEl.className = "row-subject"; subjEl.style.fontWeight = m.seen ? "400" : "600";
+      subjEl.textContent = m.subject;
+      var prevEl = document.createElement("div"); prevEl.className = "row-preview"; prevEl.textContent = m.preview;
+      main.appendChild(top); main.appendChild(subjEl); main.appendChild(prevEl);
+
+      row.appendChild(dot); row.appendChild(av); row.appendChild(main);
+      row.addEventListener("click", function(){ openMessage(m); });
+      els.rows.appendChild(row);
+    });
+  }
+
+  function openMessage(m){
+    state.activeMessage = m;
+    var from = m.from || {};
+    els.detailBody.innerHTML = "";
+
+    if (m.bodyIsHtml){
+      var note = document.createElement("div"); note.className = "html-note";
+      note.textContent = "HTML email — shown as plain text";
+      els.detailBody.appendChild(note);
+    }
+    var subj = document.createElement("h1"); subj.className = "detail-subject"; subj.textContent = m.subject;
+    els.detailBody.appendChild(subj);
+
+    var meta = document.createElement("div"); meta.className = "detail-meta";
+    var av = document.createElement("div"); av.className = "detail-avatar";
+    var label = from.name || from.email || "?";
+    av.style.background = avatarColor(label); av.textContent = initialsOf(from.name, from.email);
+    var metaText = document.createElement("div");
+    var nameEl = document.createElement("div"); nameEl.className = "detail-from-name"; nameEl.textContent = label;
+    var emailEl = document.createElement("div"); emailEl.className = "detail-from-email"; emailEl.textContent = from.email || "";
+    var dateEl = document.createElement("div"); dateEl.className = "detail-date"; dateEl.textContent = new Date(m.receivedAt).toLocaleString();
+    metaText.appendChild(nameEl); metaText.appendChild(emailEl); metaText.appendChild(dateEl);
+    meta.appendChild(av); meta.appendChild(metaText);
+    els.detailBody.appendChild(meta);
+
+    var textEl = document.createElement("div"); textEl.className = "detail-text";
+    linkify(textEl, m.bodyText);
+    els.detailBody.appendChild(textEl);
+
+    els.detailScreen.style.display = "flex";
+    requestAnimationFrame(function(){ els.detailScreen.classList.add("open"); });
+
+    if (!m.seen){
+      m.seen = true;
+      api("POST", "/api/mailboxes/" + encodeURIComponent(state.activeEmail) + "/messages/" + encodeURIComponent(m.id) + "/seen").catch(function(){});
+      renderMessages();
+    }
+  }
+
+  els.btnBackDetail.addEventListener("click", function(){
+    els.detailScreen.classList.remove("open");
+    setTimeout(function(){ els.detailScreen.style.display = "none"; }, 200);
+  });
+
+  var confirmDeleteMsgArmed = false;
+  els.btnDeleteMessage.addEventListener("click", function(){
+    if (!state.activeMessage) return;
+    if (!confirmDeleteMsgArmed){
+      confirmDeleteMsgArmed = true;
+      els.btnDeleteMessage.textContent = "Confirm delete?";
+      setTimeout(function(){ confirmDeleteMsgArmed = false; els.btnDeleteMessage.textContent = "Delete email"; }, 3000);
+      return;
+    }
+    confirmDeleteMsgArmed = false;
+    els.btnDeleteMessage.textContent = "Delete email";
+    var id = state.activeMessage.id;
+    api("DELETE", "/api/mailboxes/" + encodeURIComponent(state.activeEmail) + "/messages/" + encodeURIComponent(id)).then(function(){
+      els.btnBackDetail.click();
+      loadMessages();
+    }).catch(function(err){ alert("Error deleting email: " + err.message); });
+  });
+
+  // ---------------- boot ----------------
+  function boot(){
+    loadDomains().then(loadMailboxes);
+  }
+
+  api("GET", "/api/me").then(function(r){
+    if (r.authenticated){ showLoggedIn(); boot(); }
+    else { showLoggedOut(); }
+  }).catch(function(){ showLoggedOut(); });
+})();
+</script>
+</body>
+</html>

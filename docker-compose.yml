@@ -1,0 +1,46 @@
+services:
+  stalwart:
+    image: stalwartlabs/stalwart:v0.16.24
+    container_name: stalwart
+    restart: unless-stopped
+    hostname: mail.${MAIL_DOMAIN:?Missing MAIL_DOMAIN in .env}
+    environment:
+      - STALWART_RECOVERY_ADMIN=admin:${ADMIN_PASSWORD:-Aa123456}
+    volumes:
+      - ./data:/opt/stalwart
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - mail
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?Missing CLOUDFLARE_TUNNEL_TOKEN in .env}
+    depends_on:
+      - stalwart
+    networks:
+      - mail
+
+  admin-app:
+    build: ./admin-app
+    container_name: admin-app
+    restart: unless-stopped
+    environment:
+      - STALWART_URL=http://stalwart:8080
+      - STALWART_ADMIN_PASSWORD=${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD in .env}
+      - APP_ADMIN_PASSWORD=${APP_ADMIN_PASSWORD:?Missing APP_ADMIN_PASSWORD in .env}
+      # Don't put a default containing '$' here (docker-compose escaping is
+      # error-prone); the default "Hellototo123$" already lives in
+      # admin-app/src/stalwart.js — only set this var in .env to override it.
+      - DEFAULT_MAILBOX_PASSWORD=${DEFAULT_MAILBOX_PASSWORD:-}
+    depends_on:
+      - stalwart
+    #ports:
+    #  - "127.0.0.1:3000:3000"
+    networks:
+      - mail
+
+networks:
+  mail:

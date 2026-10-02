@@ -1,0 +1,13 @@
+name = "stalwart-mail-ingest"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# STALWART_URL (Stalwart's public URL, the JMAP endpoint via the cloudflared
+# tunnel) is intentionally NOT set here. `./setup.sh` passes it at deploy time
+# via `wrangler deploy --var STALWART_URL:https://mail.$MAIL_DOMAIN`, reading
+# MAIL_DOMAIN from ../.env — the single source of truth for the domain.
+# Deploying manually via the dashboard (README "Option 2")? Set it there
+# instead: Worker → Settings → Variables and Secrets → STALWART_URL.
+
+# STALWART_ADMIN_PASSWORD is a secret — do NOT declare it here.
+# Set it with: wrangler secret put STALWART_ADMIN_PASSWORD

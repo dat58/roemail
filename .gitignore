@@ -1,0 +1,19 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Stalwart's real data (mail, config) — not actually used in v0.16
+# (see README), but ignored anyway in case it's used again later
+data/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Wrangler (Cloudflare Workers) build cache
+email-worker/.wrangler/
+
+# OS / editor cruft
+.DS_Store
+*.log
